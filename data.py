@@ -69,6 +69,17 @@ def _clear_cache():
         pass
 
 
+def force_refresh():
+    """Xoá toàn bộ cache (disk + streamlit) để lần truy cập kế lấy dữ liệu mới nhất."""
+    global _CACHE_OK
+    _CACHE_OK = True
+    _clear_cache()
+    try:
+        st.cache_data.clear()
+    except Exception:
+        pass
+
+
 VNINDEX_STOCKS = {
     "VCB": 0.18, "FPT": 0.14, "HPG": 0.10, "VHM": 0.09, "TCB": 0.08,
     "VIC": 0.07, "MBB": 0.05, "MWG": 0.05, "MSN": 0.05, "VRE": 0.04,

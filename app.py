@@ -6,7 +6,7 @@ import numpy as np
 import time
 from datetime import datetime, timedelta
 
-from data import get_stock_data, normalize_ticker, get_market_status, get_vnindex
+from data import get_stock_data, normalize_ticker, get_market_status, get_vnindex, force_refresh
 from indicators import add_all_indicators, suggest_entry_points, analyze_wave_trend, detect_waves
 from screener import analyze_stock, build_alerts, classify_stock
 import portfolio
@@ -307,6 +307,13 @@ st.markdown("""
     </div>
 </div>
 """, unsafe_allow_html=True)
+
+# ---- Nút cập nhật dữ liệu mới nhất (xoá cache + tải lại) ----
+c_ref, _c_spc = st.columns([1, 3])
+with c_ref:
+    if st.button("🔄 Cập nhật dữ liệu", use_container_width=True):
+        force_refresh()
+        st.rerun()
 
 
 # ===================== CHỌN TAB - CHỈ TẢI DỮ LIỆU CỦA TAB ĐANG MỞ (GIẢM GỌI API) =====================
