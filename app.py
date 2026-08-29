@@ -81,7 +81,7 @@ st.markdown("""
 
     /* ===== RESPONSIVE CHO ĐIỆN THOẠI / IPAD ===== */
     @media (max-width: 900px) {
-        .block-container { padding: 1rem 0.6rem 0.6rem 0.6rem !important; }
+        .block-container { padding: 5.2rem 0.7rem 1rem 0.7rem !important; }
         .app-header { padding: 8px 10px; gap: 8px; }
         .app-title { font-size: 1.05em; }
         .price-main { font-size: 1.6em; }
@@ -89,6 +89,7 @@ st.markdown("""
         .section-box { padding: 10px; }
     }
     @media (max-width: 600px) {
+        .block-container { padding: 6rem 0.6rem 1rem 0.6rem !important; }
         div[data-testid="stVerticalBlock"] > div { gap: 0.4rem !important; }
         div[data-testid="stHorizontalBlock"] { flex-wrap: wrap !important; }
         .price-main { font-size: 1.4em; }
