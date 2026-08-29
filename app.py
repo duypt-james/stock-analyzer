@@ -15,11 +15,14 @@ import config
 st.set_page_config(page_title="Xích Luyện Phố Wall", page_icon="📈", layout="wide")
 
 # ---- Thiết lập API key vnstock (từ secrets/.env, không nhúng vào code) ----
+# Chỉ cài đặt MỘT LẦN mỗi phiên để tránh spam log và tránh cạn giới hạn lượt gọi.
 _key = config.get_api_key()
 if _key:
     try:
         from vnstock.core import setup_api_key
-        setup_api_key(_key)
+        if "vn_api_ready" not in st.session_state:
+            setup_api_key(_key)
+            st.session_state.vn_api_ready = True
     except Exception:
         pass
 

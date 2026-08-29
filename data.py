@@ -164,9 +164,9 @@ def normalize_ticker(ticker: str) -> str:
 
 @st.cache_data(ttl=21600, show_spinner=False)
 def get_vnindex(period: str = "1y") -> pd.DataFrame:
-    """Lấy dữ liệu chỉ số VNINDEX thực từ nguồn VCI (khớp với thực tế)."""
+    """Lấy dữ liệu chỉ số VNINDEX thực, lần lượt thử qua nhiều nguồn dữ liệu."""
     cache_key = f"vnindex_{period}"
-    cached = _read_cache(cache_key, ttl=21600)  # cache 6 phút
+    cached = _read_cache(cache_key, ttl=21600)  # cache 6 giờ
     if cached is not None:
         return cached
 
@@ -174,21 +174,22 @@ def get_vnindex(period: str = "1y") -> pd.DataFrame:
     start = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
     end = datetime.now().strftime("%Y-%m-%d")
 
-    for attempt in range(3):
-        try:
-            _throttle()
-            q = Quote(symbol="VNINDEX", source="VCI")
-            df = q.history(start=start, end=end)
-            if not df.empty:
-                df["time"] = pd.to_datetime(df["time"])
-                df = df.set_index("time")
-                df.columns = [c.capitalize() for c in df.columns]
-                result = df[["Open", "High", "Low", "Close", "Volume"]]
-                _write_cache(cache_key, result)
-                return result
-        except Exception:
-            pass
-        time.sleep(1)
+    for source in ("VCI", "KBS", "DnSE"):
+        for attempt in range(2):
+            try:
+                _throttle()
+                q = Quote(symbol="VNINDEX", source=source)
+                df = q.history(start=start, end=end)
+                if not df.empty:
+                    df["time"] = pd.to_datetime(df["time"])
+                    df = df.set_index("time")
+                    df.columns = [c.capitalize() for c in df.columns]
+                    result = df[["Open", "High", "Low", "Close", "Volume"]]
+                    _write_cache(cache_key, result)
+                    return result
+            except Exception:
+                pass
+            time.sleep(1)
     return pd.DataFrame()
 
 
