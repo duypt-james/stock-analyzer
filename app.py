@@ -82,6 +82,10 @@ st.markdown("""
     .entry-value { font-size: 1.1em; font-weight: 700; }
     .val-green { color: #16a34a; } .val-red { color: #dc2626; } .val-yellow { color: #b45309; } .val-blue { color: #2563eb; }
 
+    /* Căn nút cập nhật thẳng hàng ngang với logo/tiêu đề */
+    [data-testid="stColumn"]:has(div.app-header) { display: flex; align-items: center; }
+    [data-testid="stColumn"]:has(button) { display: flex; align-items: center; justify-content: flex-end; }
+
     /* ===== RESPONSIVE CHO ĐIỆN THOẠI / IPAD ===== */
     @media (max-width: 900px) {
         .block-container { padding: 5.2rem 0.7rem 1rem 0.7rem !important; }
@@ -298,20 +302,19 @@ def _predict_text(a) -> str:
     if "BÁN" in sig:
         return f"Xu hướng tiêu cực: khả năng điều chỉnh/giảm còn tiếp diễn. Ưu tiên chốt lời hoặc đứng ngoài."
     return "Đi ngang/tích lũy: chưa có tín hiệu rõ ràng, nên chờ giá bứt phá hoặc xác nhận hướng."
-st.markdown("""
-<div class="app-header">
-    <span class="app-logo">📈</span>
-    <div>
-        <div class="app-title">Xích Luyện Phố Wall</div>
-        <div class="app-sub">Phân tích kỹ thuật chứng khoán & chỉ số VNINDEX Việt Nam</div>
+col_head, col_btn = st.columns([4, 1], vertical_alignment="center", gap="small")
+with col_head:
+    st.markdown("""
+    <div class="app-header">
+        <span class="app-logo">📈</span>
+        <div>
+            <div class="app-title">Xích Luyện Phố Wall</div>
+            <div class="app-sub">Phân tích kỹ thuật chứng khoán & chỉ số VNINDEX Việt Nam</div>
+        </div>
     </div>
-</div>
-""", unsafe_allow_html=True)
-
-# ---- Nút cập nhật dữ liệu mới nhất (xoá cache + tải lại) ----
-c_ref, _c_spc = st.columns([1, 3])
-with c_ref:
-    if st.button("🔄 Cập nhật dữ liệu", use_container_width=True):
+    """, unsafe_allow_html=True)
+with col_btn:
+    if st.button("🔄 Cập nhật", use_container_width=True):
         force_refresh()
         st.rerun()
 
