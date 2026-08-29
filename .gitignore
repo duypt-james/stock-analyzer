@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Virtual env
+.venv/
+venv/
+
+# Environment / secrets (KHÔNG đẩy lên GitHub)
+.env
+.env.local
+
+# Streamlit local state
+.data_cache/
+*.parquet
+
+# Dữ liệu local
+my_watchlist.json
+fireant_token.json
+
+# Logs / tạm
+run_log.txt
+*.log
+streamlit_out.txt
+streamlit_err.txt
+*.out.txt
+
+# Test scripts tạm
+test_*.py
+check_*.py
+verify.py
