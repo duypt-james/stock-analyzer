@@ -68,7 +68,50 @@ def analyze_stock(df: pd.DataFrame, market_status: dict = None) -> dict:
         "wave_trend": wave["trend"],
         "wave_desc": wave["description"],
         "bb_lower": near_low, "bb_upper": near_high,
+        "hist": predict_history(df),
     }
+
+
+def predict_history(df: pd.DataFrame, horizons=(5, 10, 20)) -> dict:
+    """Thống kê lịch sử thực tế: sau N phiên, giá thường tăng hay giảm bao nhiêu %.
+
+    Dựa trên DỮ LIỆU QUÁ KHỨ của chính mã (1 năm gần nhất). Đây là MÔ TẢ THỐNG KÊ,
+    không phải dự đoán chắc chắn. Trả về dict {n_phiên: {prob_up, avg_return,
+    median_return, p10, p90}} (đơn vị % lợi nhuận).
+    """
+    if df is None or df.empty or len(df) < 40:
+        return {}
+    closes = df["Close"].astype(float).reset_index(drop=True)
+    n = len(closes)
+    out = {}
+    for h in horizons:
+        if n <= h + 20:  # cần đủ số lần quan sát
+            continue
+        # Với mỗi vị trí i, xem giá sau h phiên tăng/giảm bao nhiêu %
+        returns = []
+        max_i = n - h
+        for i in range(0, max_i):
+            a = closes.iloc[i]
+            b = closes.iloc[i + h]
+            if a and a > 0:
+                returns.append((b - a) / a * 100.0)
+        if len(returns) < 10:
+            continue
+        r = np.array(returns)
+        prob_up = float(np.mean(r > 0)) * 100.0
+        avg_return = float(np.mean(r))
+        median_return = float(np.median(r))
+        p10 = float(np.percentile(r, 10))
+        p90 = float(np.percentile(r, 90))
+        out[h] = {
+            "prob_up": prob_up,
+            "avg_return": avg_return,
+            "median_return": median_return,
+            "p10": p10,
+            "p90": p90,
+            "samples": int(len(r)),
+        }
+    return out
 
 
 def build_alerts(df: pd.DataFrame, market_status: dict = None, stop_loss: float = None, take_profit: float = None) -> list:

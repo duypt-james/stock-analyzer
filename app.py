@@ -287,6 +287,7 @@ def screen_all() -> pd.DataFrame:
             "_confirms_up": c["confirms_up"],
             "_confirms_down": c["confirms_down"],
             "_opp_details": c["opp_details"],
+            "_hist": a.get("hist") or {},
         })
     if not rows:
         return pd.DataFrame()
@@ -702,6 +703,35 @@ elif tab == "4. Cơ hội":
                     st.markdown(f'<div class="entry-cell"><div class="entry-label">CHỐT LỜI</div><div class="entry-value" style="color:#16a34a;">{_px(r["Chốt lời"])}</div></div>', unsafe_allow_html=True)
 
                 st.markdown(f'<div style="margin-top:8px;color:#1e3a5f;font-size:0.88em;"><strong style="color:#2563eb;">Kết luận:</strong> {r["_reason"]}</div>', unsafe_allow_html=True)
+
+                # ---- Kỳ vọng thống kê lịch sử T+n (minh bạch, dựa trên quá khứ) ----
+                hist = r.get("_hist") or {}
+                if hist:
+                    st.markdown(f'<div style="margin-top:10px;font-weight:700;color:#2563eb;">📊 Kỳ vọng thống kê lịch sử (dựa trên 1 năm quá khứ)</div>', unsafe_allow_html=True)
+                    hcols = st.columns(len(hist))
+                    for hc, (h, s) in zip(hcols, sorted(hist.items())):
+                        up_prob = s["prob_up"]
+                        avg = s["avg_return"]
+                        med = s["median_return"]
+                        lo = s["p10"]
+                        hi = s["p90"]
+                        if up_prob >= 60:
+                            colr = "#16a34a"
+                        elif up_prob <= 40:
+                            colr = "#dc2626"
+                        else:
+                            colr = "#b45309"
+                        with hc:
+                            st.markdown(
+                                f'<div class="entry-cell"><div class="entry-label">T+{h} · XS tăng {up_prob:.0f}%</div>'
+                                f'<div style="font-size:1.05em;font-weight:700;color:{colr};">{"+" if avg >= 0 else ""}{avg:.2f}%</div>'
+                                f'<div style="color:#6b87a8;font-size:0.7em;">TB {avg:+.2f}% · Trung vị {med:+.2f}%</div>'
+                                f'<div style="color:#6b87a8;font-size:0.7em;">Khoảng {lo:+.1f}% → {hi:+.1f}%</div>'
+                                f'<div style="color:#aab7c8;font-size:0.63em;">{s["samples"]} lần q.sát</div></div>',
+                                unsafe_allow_html=True,
+                            )
+                    st.markdown(f'<div style="color:#aab7c8;font-size:0.7em;margin-top:4px;">⚠️ Số liệu mô tả XU HƯỚNG QUÁ KHỨ, không đảm bảo kết quả tương lai. "XS tăng" = % số lần trong quá khứ giá sau N phiên cao hơn lúc quan sát.</div>', unsafe_allow_html=True)
+
                 st.markdown(f'<div style="color:#6b87a8;font-size:0.8em;">Xu hướng: {r["_wave"]} · Điểm xu hướng {int(r["_trend_score"])}/100 · Điểm cơ hội mua {int(r["_opp_score"])}/100 · Xác nhận tăng {int(r["_confirms_up"])} / giảm {int(r["_confirms_down"])}</div>', unsafe_allow_html=True)
 
                 mb = r["_reasons_buy"] or []
@@ -731,7 +761,7 @@ elif tab == "4. Cơ hội":
 
         # ---------- BẢNG TỔNG QUAN TOÀN RỔ ----------
         show_df = df_screen.drop(columns=["_reasons_buy", "_reasons_sell", "_wave", "_net", "_reason",
-                                          "_trend_score", "_opp_score", "_confirms_up", "_confirms_down", "_opp_details"])
+                                          "_trend_score", "_opp_score", "_confirms_up", "_confirms_down", "_opp_details", "_hist"])
         disp = show_df.copy()
         disp["Giá"] = disp["Giá"].map(lambda v: f"{v:,.2f}")
         for c in ["1 ngày (%)", "5 ngày (%)"]:
