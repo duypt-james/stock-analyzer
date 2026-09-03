@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 from data import get_stock_data, normalize_ticker, get_market_status, get_vnindex, force_refresh
 from indicators import add_all_indicators, suggest_entry_points, analyze_wave_trend, detect_waves
 from screener import analyze_stock, build_alerts, classify_stock
+from fundamentals import analyze_fundamental
 import portfolio
 import config
 
@@ -294,6 +295,28 @@ def screen_all() -> pd.DataFrame:
     return df
 
 
+def _fund_num(v):
+    """Chuyển giá trị cơ bản thành số (hoặc None nếu không hợp lệ)."""
+    try:
+        if v is None or v == "":
+            return None
+        f = float(v)
+        import math
+        if math.isnan(f):
+            return None
+        return f
+    except (TypeError, ValueError):
+        return None
+
+
+def _fund_disp(v, digits=2):
+    """Định dạng số cơ bản để hiển thị."""
+    n = _fund_num(v)
+    if n is None:
+        return "—"
+    return f"{n:,.{digits}f}"
+
+
 def _predict_text(a) -> str:
     sig = a["signal"]
     if "MUA" in sig:
@@ -320,7 +343,7 @@ with col_btn:
 
 
 # ===================== CHỌN TAB - CHỈ TẢI DỮ LIỆU CỦA TAB ĐANG MỞ (GIẢM GỌI API) =====================
-tab = st.segmented_control("Chọn mục", ["1. Thị trường", "2. Thống kê", "3. Chi tiết", "4. Cơ hội", "5. Của tôi"],
+tab = st.segmented_control("Chọn mục", ["1. Thị trường", "2. Thống kê", "3. Chi tiết", "4. Cơ hội", "5. Của tôi", "6. Thông tin"],
                            default="1. Thị trường", selection_mode="single", label_visibility="collapsed")
 st.markdown('<div style="height:6px;"></div>', unsafe_allow_html=True)
 
@@ -733,7 +756,7 @@ elif tab == "4. Cơ hội":
 
 
 # ===================== TAB 5: CỦA TÔI (DANH MỤC THEO DÕI + CẢNH BÁO) =====================
-else:
+elif tab == "5. Của tôi":
     st.markdown("""
     <div style="margin-bottom: 10px;">
         <h3 style="margin:0;font-size:1.3em;">CỦA TÔI — MÃ ĐANG NẮM GIỮ / QUAN TÂM</h3>
@@ -904,3 +927,154 @@ else:
                         st.markdown('<div style="color:#dc2626;font-weight:700;margin-top:8px;">▼ Yếu tố BÁN</div>', unsafe_allow_html=True)
                         for x in a["reasons_sell"]:
                             st.markdown(f'<div style="color:#1e3a5f;font-size:0.85em;padding:1px 0;">• {x}</div>', unsafe_allow_html=True)
+
+
+# ===================== TAB 6: THÔNG TIN (PHÂN TÍCH CƠ BẢN TỪ SỐ LIỆU THẬT) =====================
+elif tab == "6. Thông tin":
+    st.markdown("""
+    <div style="margin-bottom: 10px;">
+        <h3 style="margin:0;font-size:1.3em;">THÔNG TIN DOANH NGHIỆP — PHÂN TÍCH CƠ BẢN</h3>
+        <div style="color:#6b87a8;font-size:0.75em;">Nhập mã chứng khoán để xem thông tin doanh nghiệp, báo cáo tài chính và đánh giá sơ bộ dựa trên số liệu thực của vnstock.</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown('<div class="section-box" style="margin-top:0;">', unsafe_allow_html=True)
+    col_sym, col_go = st.columns([3, 1])
+    with col_sym:
+        sym_in = st.text_input("Mã chứng khoán (VD: FPT, VCB, HPG)", value="FPT", key="fund_sym")
+    with col_go:
+        go_clicked = st.button("🔍 Tra cứu", use_container_width=True, type="primary")
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    if sym_in.strip():
+        sym_clean = sym_in.strip().upper().replace(".VN", "")
+        with st.spinner("Đang tải dữ liệu cơ bản, vui lòng chờ..."):
+            res = analyze_fundamental(sym_clean)
+
+        if not res.get("ok"):
+            st.error(f"Không tải được dữ liệu cho mã {sym_clean}. Kiểm tra lại mã hoặc thử lại sau.")
+        else:
+            info = res.get("info", {})
+            fin = res.get("fin", {})
+            verdicts = res.get("verdicts", [])
+            score = res.get("score", 0)
+            hist = res.get("history", {})
+
+            # 1) Thông tin doanh nghiệp
+            st.markdown(f'<div class="section-title">🏢 Thông tin doanh nghiệp — {sym_clean}</div>', unsafe_allow_html=True)
+            fields = [
+                ("Tên doanh nghiệp", info.get("companyName") or info.get("name")),
+                ("Ngành nghề", info.get("business_model")),
+                ("Sàn giao dịch", info.get("exchange")),
+                ("Vốn điều lệ", f"{_fund_num(info.get('charter_capital')):,}₫" if _fund_num(info.get('charter_capital')) else None),
+                ("Số nhân viên", _fund_num(info.get("number_of_employees"))),
+                ("Giám đốc điều hành", info.get("ceo_name")),
+                ("Website", info.get("website")),
+                ("Ngày niêm yết", info.get("listing_date")),
+                ("Năm thành lập", info.get("founded_date")),
+            ]
+            for label, val in fields:
+                if val not in (None, ""):
+                    st.markdown(f'<div style="margin:3px 0;"><strong style="color:#2563eb;">{label}:</strong> <span style="color:#1e3a5f;">{val}</span></div>', unsafe_allow_html=True)
+
+            st.markdown('<div style="height:8px;"></div>', unsafe_allow_html=True)
+
+            # 2) Điểm tổng hợp + nhận định
+            badge_color = "#16a34a" if score >= 60 else "#b45309" if score >= 40 else "#dc2626"
+            verdict_label = "TÍCH CỰC" if score >= 60 else "TRUNG LẬP" if score >= 40 else "TIÊU CỰC"
+            st.markdown(f"""
+            <div class="section-box" style="background:#f4f9ff;border-color:#2563eb;">
+                <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+                    <div style="font-size:1.9em;font-weight:800;color:{badge_color};">{score}/100</div>
+                    <div>
+                        <div style="font-weight:700;color:{badge_color};font-size:1.15em;">Đánh giá: {verdict_label}</div>
+                        <div style="color:#1e3a5f;font-size:0.85em;">{res.get('summary','')}</div>
+                    </div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            # 3) Bảng chỉ số hiện tại
+            st.markdown(f'<div class="section-title" style="margin-top:14px;">📊 Chỉ số hiện tại</div>', unsafe_allow_html=True)
+            val_map = [
+                ("Giá thị trường (đồng)", fin.get("price")),
+                ("Vốn hóa", f"{_fund_num(fin.get('market_cap'))/1e9:.2f} tỷ ₫" if _fund_num(fin.get('market_cap')) else None),
+                ("P/E", fin.get("pe_ratio")),
+                ("P/B", fin.get("pb_ratio")),
+                ("P/S", fin.get("ps_ratio")),
+                ("EV/EBITDA", fin.get("ev_to_ebitda")),
+                ("ROE (%)", (fin.get("roe") * 100 if _fund_num(fin.get("roe")) is not None and abs(_fund_num(fin.get("roe"))) <= 1 else fin.get("roe"))),
+                ("ROA (%)", (fin.get("roa") * 100 if _fund_num(fin.get("roa")) is not None and abs(_fund_num(fin.get("roa"))) <= 1 else fin.get("roa"))),
+                ("Nợ/VCSH", fin.get("debt_to_equity") or fin.get("debtPerEquity")),
+                ("Current ratio", fin.get("current_ratio")),
+                ("Cổ tức (%)", fin.get("dividend_yield")),
+                ("EPS (đồng)", fin.get("eps")),
+            ]
+            c1, c2, c3, c4 = st.columns(4)
+            cells = [c1, c2, c3, c4]
+            for i, (label, val) in enumerate(val_map):
+                if val is None:
+                    continue
+                with cells[i % 4]:
+                    if label == "P/E":
+                        color = "#16a34a" if 0 < val <= 15 else "#dc2626" if val > 25 else "#b45309"
+                    elif label.startswith("Nợ"):
+                        color = "#16a34a" if val < 1 else "#dc2626" if val >= 2 else "#b45309"
+                    elif label == "ROE (%)":
+                        color = "#16a34a" if val >= 15 else "#dc2626" if val < 8 else "#b45309"
+                    else:
+                        color = "#2563eb"
+                    st.markdown(
+                        f'<div class="entry-cell"><div class="entry-label">{label}</div>'
+                        f'<div class="entry-value" style="color:{color};">{_fund_disp(val)}</div></div>',
+                        unsafe_allow_html=True,
+                    )
+
+            # 4) Lịch sử hoạt động KD (doanh thu, lợi nhuận theo quý)
+            st.markdown(f'<div class="section-title" style="margin-top:14px;">📈 Diễn biến hoạt động kinh doanh (theo quý)</div>',
+                        unsafe_allow_html=True)
+            rev_vec = hist.get("net_sales", [])
+            np_vec = hist.get("net_profit", [])
+            if rev_vec or np_vec:
+                chart_rows = []
+                for (lab_r, rv), (lab_n, nv) in zip(rev_vec or [(None, None) for _ in range(len(np_vec or []))],
+                                                    np_vec or [(None, None) for _ in range(len(rev_vec or []))]):
+                    label = lab_r or lab_n
+                    if label is None:
+                        continue
+                    chart_rows.append({
+                        "Kỳ": label,
+                        "Doanh thu (tỷ ₫)": round((rv / 1e9), 2) if rv is not None else None,
+                        "Lợi nhuận (tỷ ₫)": round((nv / 1e9), 2) if nv is not None else None,
+                    })
+                chart_rows = chart_rows[-8:]
+                if chart_rows:
+                    st.line_chart(pd.DataFrame(chart_rows).set_index("Kỳ"))
+            else:
+                st.info("Không đủ dữ liệu doanh thu/lợi nhuận theo quý.")
+
+            # 5) Đánh giá theo tiêu chí
+            st.markdown(f'<div class="section-title" style="margin-top:14px;">✅/❌ Đánh giá theo tiêu chí</div>',
+                        unsafe_allow_html=True)
+            for kind, title, desc in verdicts:
+                if kind == "pos":
+                    mk, colr = "🟢", "#16a34a"
+                elif kind == "neg":
+                    mk, colr = "🔴", "#dc2626"
+                else:
+                    mk, colr = "🟡", "#b45309"
+                st.markdown(
+                    f'<div class="section-box" style="margin:6px 0;padding:10px 12px;">'
+                    f'<div style="color:{colr};font-weight:700;">{mk} {title}</div>'
+                    f'<div style="color:#1e3a5f;font-size:0.85em;">{desc}</div></div>',
+                    unsafe_allow_html=True,
+                )
+
+            # 6) Cảnh báo trách nhiệm
+            st.markdown(
+                '<div style="margin-top:14px;padding:10px;background:#fff8e6;border:1px solid #f3d488;'
+                'border-radius:8px;color:#b45309;font-size:0.78em;">'
+                '⚠️ Đánh giá trên dựa hoàn toàn vào SỐ LIỆU TÀI CHÍNH thực từ vnstock (giới hạn ~8 kỳ ở gói cộng đồng) '
+                'theo quy tắc định lượng tự động. KHÔNG bao gồm tin tức, dư luận thị trường và KHÔNG phải '
+                'khuyến nghị đầu tư. Số liệu có thể chậm/lệch so với thực tế.</div>',
+                unsafe_allow_html=True)
