@@ -52,7 +52,8 @@ if config.is_protected():
 # ---- Tự làm mới trang mỗi ~5 giây để giá bảng REAL-TIME (poll bảng giá KBS) ----
 # Chỉ khi đã đăng nhập. Các ô nặng (VNINDEX, quét 20 mã) đã cache ngắn ở data.py/app.py
 # nên việc rerun 5s KHÔNG gọi lại API lặp lại; chỉ bảng giá realtime & tab đang mở chạy lại.
-st_autorefresh(interval=5000, key="realtime_refresh")
+# Lưu ý: st_autorefresh được gọi SAU khi chọn tab (bên dưới), CHỈ bật cho các tab cần giá
+# realtime (1-5), KHÔNG bật cho Tab 6 (thông tin/cơ bản — dữ liệu không đổi theo giây).
 
 # Bảng giá real-time cho cả rổ theo dõi (1 request/4s) — dùng chung cho mọi tab.
 _RT_SYMBOLS = tuple(sorted(set(
@@ -422,6 +423,11 @@ with col_btn:
 tab = st.segmented_control("Chọn mục", ["1. Thị trường", "2. Thống kê", "3. Chi tiết", "4. Cơ hội", "5. Của tôi", "6. Thông tin"],
                            default="1. Thị trường", selection_mode="single", label_visibility="collapsed")
 st.markdown('<div style="height:6px;"></div>', unsafe_allow_html=True)
+
+# Auto-refresh 5s CHỈ cho các tab có giá realtime (1-5). Tab 6 (Thông tin/cơ bản) không
+# bị tự làm mới — tránh rerun 5s vô ích khi đang đọc phân tích cơ bản.
+if tab != "6. Thông tin":
+    st_autorefresh(interval=5000, key="realtime_refresh")
 
 
 # ===================== TAB 1: THỊ TRƯỜNG (VNINDEX) =====================
