@@ -70,6 +70,34 @@ def _rt(sym: str):
         return None
 
 
+@st.cache_data(ttl=3600, show_spinner=False)
+def _cached_pair(df: pd.DataFrame) -> pd.DataFrame:
+    """Tính toàn bộ chỉ báo + sóng MỘT LẦN rồi cache (key = nội dung df).
+    Giúp chuyển tab / rerun 5s không tính lại chỉ báo nặng mỗi lần."""
+    try:
+        ind = add_all_indicators(df.copy())
+        return detect_waves(ind)
+    except Exception:
+        return df.copy()
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def _pf_analyze_symbol(symbol: str, sl, tp):
+    """Phân tích danh mục (Tab 5) cho 1 mã, cache theo mã —— chuyển tab nhanh, ít gọi API lặp."""
+    try:
+        df = get_stock_data(symbol + ".VN", period="1y", interval="1d")
+        if df.empty:
+            return None, None, False
+        mkt = get_vnindex("1y")
+        ms = get_market_status(mkt) if not mkt.empty else None
+        a = analyze_stock(df, market_status=ms)
+        alerts = build_alerts(df, market_status=ms, stop_loss=sl, take_profit=tp)
+        return a, alerts, True
+    except Exception:
+        return None, None, False
+
+
+
 # CSS Styling - Giao diện xanh lam nhẹ, nội dung sát mép trái
 st.markdown("""
 <style>
@@ -92,7 +120,7 @@ st.markdown("""
     .price-change { font-size: 1em; font-weight: 600; margin-left: 8px; }
     .price-up { color: #16a34a; }
     .price-down { color: #dc2626; }
-    .price-flat { color: #64748b; }
+    .price-flat { color: #eab308; }
     .section-box { background: #ffffff; border: 1px solid #cfe2f8; border-radius: 8px; padding: 14px; margin: 8px 0; box-shadow: 0 1px 3px rgba(37,99,235,0.08); }
     .section-title { font-size: 0.9em; font-weight: 600; color: #2563eb; margin-bottom: 10px; padding-bottom: 6px; border-bottom: 1px solid #dbe7f6; }
     h3 { color: #2563eb !important; font-weight: 700 !important; }
@@ -424,7 +452,7 @@ if tab == "1. Thị trường":
                     if _rv_p is None:
                         _rref = _rv.get("ref") or _rv["price"]
                         _rv_p = (_rv["price"] - _rref) / _rref * 100 if _rref else 0.0
-                    _c = "price-up" if _rv_p >= 0 else "price-down"
+                    _c = "price-up" if _rv_p > 0 else "price-down" if _rv_p < 0 else "price-flat"
                     _rw_cells.append(
                         f'<div style="display:flex;flex-direction:column;align-items:center;padding:6px 4px;'
                         f'background:#f7fbff;border:1px solid #dbe7f6;border-radius:6px;min-width:92px;">'
@@ -588,8 +616,7 @@ elif tab == "3. Chi tiết":
     if df.empty:
         st.error(f"Không tìm thấy dữ liệu mã chứng khoán {symbol}. Có thể do giới hạn API (20 lượt/phút) — vui lòng thử lại sau 1 phút, hoặc kiểm tra lại mã.")
     else:
-        df = add_all_indicators(df.copy())
-        df = detect_waves(df)
+        df = _cached_pair(df)
 
         latest = df.iloc[-1]
         prev = df.iloc[-2] if len(df) > 1 else latest
@@ -777,8 +804,8 @@ elif tab == "4. Cơ hội":
                 else:
                     _rc_price = r["Giá"]
                     _rc_pct = r["1 ngày (%)"]
-                _rc_cls = "price-up" if _rc_pct >= 0 else "price-down"
-                _rc_sign = "+" if _rc_pct >= 0 else ""
+                _rc_cls = "price-up" if _rc_pct > 0 else "price-down" if _rc_pct < 0 else "price-flat"
+                _rc_sign = "+" if _rc_pct > 0 else ""
                 st.markdown(f"""
                 <div style="display:flex;align-items:baseline;gap:10px;padding:4px 0;flex-wrap:wrap;">
                     <span style="font-weight:700;color:#2563eb;font-size:1.1em;">{r['Mã']}</span>
@@ -891,10 +918,6 @@ elif tab == "5. Của tôi":
     </div>
     """, unsafe_allow_html=True)
 
-    with st.spinner("Đang tải dữ liệu danh mục của bạn..."):
-        mkt_pf = get_vnindex("1y")
-        market_status_pf = get_market_status(mkt_pf) if not mkt_pf.empty else None
-
     watch = portfolio.get_watchlist()
 
     # ---- Thêm mã mới ----
@@ -932,13 +955,14 @@ elif tab == "5. Của tôi":
         # ---- Tính toán đánh giá cho từng mã ----
         pf_rows = []
         for sym, meta in watch.items():
-            df = get_stock_data(sym + ".VN", period="1y", interval="1d")
-            if df.empty:
+            a, alerts, ok = _pf_analyze_symbol(
+                sym.upper(),
+                meta.get("stop_loss"),
+                meta.get("take_profit"),
+            )
+            if not ok:
                 pf_rows.append({"Mã": sym, "ok": False, "meta": meta})
                 continue
-            a = analyze_stock(df, market_status=market_status_pf)
-            alerts = build_alerts(df, market_status=market_status_pf,
-                                  stop_loss=meta.get("stop_loss"), take_profit=meta.get("take_profit"))
             a["ok"] = True
             pf_rows.append({"Mã": sym, "ok": True, "a": a, "alerts": alerts, "meta": meta})
 
@@ -1017,8 +1041,8 @@ elif tab == "5. Của tôi":
                 else:
                     _ph_price = a["current_price"]
                     _ph_pct = a["pct_1d"]
-                _ph_cls = "price-up" if _ph_pct >= 0 else "price-down"
-                _ph_sign = "+" if _ph_pct >= 0 else ""
+                _ph_cls = "price-up" if _ph_pct > 0 else "price-down" if _ph_pct < 0 else "price-flat"
+                _ph_sign = "+" if _ph_pct > 0 else ""
                 st.markdown(f"""
                 <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin:8px 0 2px 0;">
                     <span style="font-weight:700;color:#2563eb;font-size:1.05em;">{sym}</span>
@@ -1038,7 +1062,7 @@ elif tab == "5. Của tôi":
                 st.markdown(f"""
                 <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;">
                     <span style="font-size:1.2em;font-weight:700;color:#1e3a5f;">{a['current_price']:,.2f}</span>
-                    <span class="price-change {'price-up' if a['pct_1d']>=0 else 'price-down'}">{'+' if a['pct_1d']>=0 else ''}{a['pct_1d']:.2f}%</span>
+                    <span class="price-change {_ph_cls}">{_ph_sign}{a['pct_1d']:.2f}%</span>
                     <span style="color:#6b87a8;font-size:0.85em;">1 ngày · {a['pct_5d']:+.2f}% 5 ngày · {a['pct_20d']:+.2f}% 20 ngày</span>
                 </div>
                 """, unsafe_allow_html=True)
