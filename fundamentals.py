@@ -7,6 +7,8 @@ kinh doanh và bộ chỉ số tài chính (ratio). Mọi đánh giá đều d�
 đầu tư.
 """
 
+import time
+
 import pandas as pd
 import streamlit as st
 
@@ -103,8 +105,23 @@ def _get_finance(sym, source="VCI", period="quarter", get_all=True):
         return None
 
 
-def get_company_info(sym, source="KBS"):
-    """Lấy thông tin doanh nghiệp. Trả về dict hoặc {} nếu lỗi."""
+def _fetch_with_retry(fn, tries=3, wait=1.5):
+    """Gọi fn() (trả DataFrame) nhiều lần cho tới khi có dữ liệu, kèm retry.
+    Giảm tác động của lỗi mạng/DNS tạm thời ở phía nhà cung cấp dữ liệu."""
+    for attempt in range(tries):
+        try:
+            df = fn()
+            if df is not None and not df.empty:
+                return df
+        except Exception:
+            pass
+        if attempt < tries - 1:
+            time.sleep(wait)
+    return None
+
+
+def get_company_info(sym, source="KBS", tries=2):
+    """Lấy thông tin doanh nghiệp, fallback nhiều nguồn + retry. Trả {} nếu lỗi."""
     import math
 
     def _clean(v):
@@ -118,33 +135,41 @@ def get_company_info(sym, source="KBS"):
         s = str(v)
         return None if s.strip() == "" or s.strip().lower() == "nan" else v
 
-    for src in (source, "VCI"):
-        c = _get_company(sym, src)
-        if c is None:
-            continue
-        try:
-            info = c.info()
-            if hasattr(info, "iloc") and not info.empty:
-                row = info.iloc[0]
-                d = {col: _clean(row.get(col)) for col in info.columns}
-                # Chấp nhận dữ liệu KBS ngay cả khi mô tả ngành đang trống (đôi khi API trả trễ).
-                return d
-        except Exception:
-            continue
+    # thử lần lượt nhiều nguồn, mỗi nguồn retry vài lần
+    for _ in range(tries):
+        for src in (source, "VCI", "KBS", "TCBS"):
+            c = _get_company(sym, src)
+            if c is None:
+                continue
+            try:
+                info = c.info()
+                if hasattr(info, "iloc") and not info.empty:
+                    row = info.iloc[0]
+                    d = {col: _clean(row.get(col)) for col in info.columns}
+                    return d
+            except Exception:
+                continue
+        time.sleep(0.8)
     return {}
 
 
-def get_financials(sym, source="VCI"):
-    """Lấy income statement + ratio (quarter). Trả về tuple (inc_df, ratio_df)."""
-    f = _get_finance(sym, source, period="quarter", get_all=True)
-    if f is None:
-        return None, None
-    try:
-        inc = f.income_statement()
-        ratio = f.ratio()
-        return inc, ratio
-    except Exception:
-        return None, None
+def get_financials(sym, sources=("VCI", "KBS", "TCBS")):
+    """Lấy income statement + ratio (quarter). Tách riêng từng phần + fallback nhiều
+    nguồn + retry → 1 nguồn lỗi (VD: API ratio bị timeout/DNS) không làm mất dữ liệu
+    income statement vốn đã lấy được. Trả (inc_df, ratio_df)."""
+    inc = None
+    ratio = None
+    for src in sources:
+        f = _get_finance(sym, src, period="quarter", get_all=True)
+        if f is None:
+            continue
+        if inc is None:
+            inc = _fetch_with_retry(f.income_statement)
+        if ratio is None:
+            ratio = _fetch_with_retry(f.ratio)
+        if inc is not None and ratio is not None:
+            break
+    return inc, ratio
 
 
 # ---------------------------------------------------------------------------
