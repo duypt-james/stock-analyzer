@@ -6,7 +6,8 @@ import numpy as np
 import time
 from datetime import datetime, timedelta
 
-from data import get_stock_data, normalize_ticker, get_market_status, get_vnindex, force_refresh
+from data import get_stock_data, normalize_ticker, get_market_status, get_vnindex, force_refresh, get_realtime_board
+from streamlit_autorefresh import st_autorefresh
 from indicators import add_all_indicators, suggest_entry_points, analyze_wave_trend, detect_waves
 from screener import analyze_stock, build_alerts, classify_stock
 from fundamentals import analyze_fundamental
@@ -47,6 +48,27 @@ if config.is_protected():
             else:
                 st.error("Sai mật khẩu!")
         st.stop()
+
+# ---- Tự làm mới trang mỗi ~5 giây để giá bảng REAL-TIME (poll bảng giá KBS) ----
+# Chỉ khi đã đăng nhập. Các ô nặng (VNINDEX, quét 20 mã) đã cache ngắn ở data.py/app.py
+# nên việc rerun 5s KHÔNG gọi lại API lặp lại; chỉ bảng giá realtime & tab đang mở chạy lại.
+st_autorefresh(interval=5000, key="realtime_refresh")
+
+# Bảng giá real-time cho cả rổ theo dõi (1 request/4s) — dùng chung cho mọi tab.
+_RT_SYMBOLS = tuple(sorted(set(
+    ["VCB", "FPT", "HPG", "VHM", "TCB", "VIC", "MBB", "MWG", "MSN", "VRE",
+     "GAS", "PLX", "CTG", "VPB", "SHB", "SSI", "VND", "STB", "ACB", "POW"]
+)))
+
+
+def _rt(sym: str):
+    """Lấy giá real-time cho 1 mã (hoặc None nếu không có). Dùng mọi tab."""
+    try:
+        board = get_realtime_board(_RT_SYMBOLS)
+        return board.get(sym.upper())
+    except Exception:
+        return None
+
 
 # CSS Styling - Giao diện xanh lam nhẹ, nội dung sát mép trái
 st.markdown("""
@@ -243,6 +265,7 @@ def create_chart(df, show_indicators):
 
 
 @st.cache_data(ttl=600, show_spinner=False)
+@st.cache_data(ttl=180, show_spinner=False)
 def screen_all() -> pd.DataFrame:
     """Rà quét cả rổ 20 cổ phiếu bằng chỉ số kỹ thuật, xếp hạng theo cơ hội mua."""
     tickers = ["VCB", "FPT", "HPG", "VHM", "TCB", "VIC", "MBB", "MWG", "MSN", "VRE",
@@ -388,6 +411,32 @@ if tab == "1. Thị trường":
             </div>
             """, unsafe_allow_html=True)
 
+            # ---- Rổ theo dõi REAL-TIME (20 mã) ----
+            _rw = get_realtime_board(_RT_SYMBOLS)
+            if _rw:
+                _rw_cells = []
+                for _sym in ["VCB", "FPT", "HPG", "VHM", "TCB", "VIC", "MBB", "MWG", "MSN", "VRE",
+                             "GAS", "PLX", "CTG", "VPB", "SHB", "SSI", "VND", "STB", "ACB", "POW"]:
+                    _rv = _rw.get(_sym)
+                    if not _rv or not _rv.get("price"):
+                        continue
+                    _rv_p = _rv.get("pct")
+                    if _rv_p is None:
+                        _rref = _rv.get("ref") or _rv["price"]
+                        _rv_p = (_rv["price"] - _rref) / _rref * 100 if _rref else 0.0
+                    _c = "price-up" if _rv_p >= 0 else "price-down"
+                    _rw_cells.append(
+                        f'<div style="display:flex;flex-direction:column;align-items:center;padding:6px 4px;'
+                        f'background:#f7fbff;border:1px solid #dbe7f6;border-radius:6px;min-width:92px;">'
+                        f'<span style="font-weight:700;color:#2563eb;font-size:0.85em;">{_sym}</span>'
+                        f'<span style="font-weight:700;color:#1e3a5f;">{_rv["price"]:,.0f}</span>'
+                        f'<span class="price-change {_c}" style="font-size:0.8em;">{"+" if _rv_p>=0 else ""}{_rv_p:.2f}%</span></div>'
+                    )
+                if _rw_cells:
+                    st.markdown(
+                        '<div style="display:flex;gap:8px;overflow-x:auto;padding:6px 0;margin:6px 0 2px 0;">'
+                        + "".join(_rw_cells) + '</div>', unsafe_allow_html=True)
+
             fig_idx = make_subplots(rows=2, cols=1, shared_xaxes=True,
                                     vertical_spacing=0.03, row_heights=[0.75, 0.25])
             tail = market_df.iloc[-180:]
@@ -458,6 +507,20 @@ elif tab == "2. Thống kê":
 
         def _build_display(x):
             d = x.copy()
+            # Overlay giá REAL-TIME + biến động hiện tại từ bảng giá (nếu có)
+            _board = get_realtime_board(_RT_SYMBOLS)
+            for _, rrow in d.iterrows():
+                _rs = _board.get(str(rrow["Mã"]).upper())
+                if _rs and _rs.get("price"):
+                    _rp = _rs["price"]
+                    _rc = _rs.get("change")
+                    _rpct = _rs.get("pct")
+                    if _rc is None or _rpct is None:
+                        _reff = _rs.get("ref") or rrow["Giá"]
+                        _rc = _rp - _reff if _reff else 0.0
+                        _rpct = (_rc / _reff) * 100 if _reff else 0.0
+                    d.loc[rrow.name, "Giá"] = _rp
+                    d.loc[rrow.name, "1 ngày (%)"] = _rpct
             d["Giá"] = d["Giá"].map(lambda v: f"{v:,.2f}" if pd.notna(v) else "-")
             for c in ["1 ngày (%)", "15 ngày (%)", "Giá / MA20 (%)"]:
                 d[c] = d[c].map(lambda v: (f"{v:+.2f}%" if pd.notna(v) else "-"))
@@ -540,12 +603,32 @@ elif tab == "3. Chi tiết":
         entry_info = suggest_entry_points(df, market_status=market_status)
         wave_info = analyze_wave_trend(df)
 
+        # ---- Giá REAL-TIME (từ bảng giá) thay cho giá đóng cửa lịch sử khi có ----
+        rt = _rt(symbol)
+        if rt and rt.get("price"):
+            _rt_price = rt["price"]
+            _rt_ref = rt.get("ref") or prev["Close"] or latest["Close"]
+            _rt_chg = rt.get("change")
+            _rt_pct = rt.get("pct")
+            if _rt_chg is None and _rt_ref:
+                _rt_chg = _rt_price - _rt_ref
+                _rt_pct = (_rt_chg / _rt_ref) * 100 if _rt_ref else 0
+            if _rt_chg is None or _rt_pct is None:
+                _rt_chg = chg
+                _rt_pct = chg_pct
+            disp_price, disp_chg, disp_pct = _rt_price, _rt_chg, _rt_pct
+            disp_color = "price-up" if _rt_chg > 0 else "price-down" if _rt_chg < 0 else "price-flat"
+            disp_sign = "+" if _rt_chg >= 0 else ""
+        else:
+            disp_price, disp_chg, disp_pct = latest["Close"], chg, chg_pct
+            disp_color, disp_sign = chg_color, chg_sign
+
         st.markdown(f"""
         <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:15px">
             <span style="font-size:1.15em;font-weight:600;color:#4a6fa5">{company_name}</span>
             <span style="font-size:0.9em;font-weight:600;color:#2563eb;background:#d6e7fb;padding:2px 6px;border-radius:4px">{symbol}.VN</span>
-            <span class="price-main">{latest['Close']:,.2f}</span>
-            <span class="price-change {chg_color}">{chg_sign}{chg:,.2f} ({chg_sign}{chg_pct:.2f}%)</span>
+            <span class="price-main">{disp_price:,.2f}</span>
+            <span class="price-change {disp_color}">{disp_sign}{disp_chg:,.2f} ({disp_sign}{disp_pct:.2f}%)</span>
         </div>
         """, unsafe_allow_html=True)
 
@@ -682,11 +765,25 @@ elif tab == "4. Cơ hội":
             st.markdown(f'<div class="section-title">✅ MÃ ĐƯỢC CHỌN LỌC — CƠ HỘI TĂNG ({len(cand)} mã) · có điểm mua / cắt lỗ / chốt lời</div>', unsafe_allow_html=True)
             for _, r in cand.iterrows():
                 _px = lambda v: "-" if v is None or pd.isna(v) else f"{v:,.0f}"
+                # ---- Giá REAL-TIME từ bảng giá (nếu có) ----
+                _rts = _rt(str(r["Mã"]).upper())
+                if _rts and _rts.get("price"):
+                    _rc_price = _rts["price"]
+                    _rc_pct = _rts.get("pct")
+                    _rc_ref = _rts.get("ref") or r["Giá"]
+                    if _rc_pct is None and _rc_ref:
+                        _rc_pct = (_rc_price - _rc_ref) / _rc_ref * 100 if _rc_ref else 0.0
+                    _rc_pct = _rc_pct if _rc_pct is not None else r["1 ngày (%)"]
+                else:
+                    _rc_price = r["Giá"]
+                    _rc_pct = r["1 ngày (%)"]
+                _rc_cls = "price-up" if _rc_pct >= 0 else "price-down"
+                _rc_sign = "+" if _rc_pct >= 0 else ""
                 st.markdown(f"""
                 <div style="display:flex;align-items:baseline;gap:10px;padding:4px 0;flex-wrap:wrap;">
                     <span style="font-weight:700;color:#2563eb;font-size:1.1em;">{r['Mã']}</span>
-                    <span style="font-weight:700;color:#1e3a5f;">{r['Giá']:,.2f}</span>
-                    <span class="price-change {'price-up' if r['1 ngày (%)']>=0 else 'price-down'}">{'+' if r['1 ngày (%)']>=0 else ''}{r['1 ngày (%)']:.2f}%</span>
+                    <span style="font-weight:700;color:#1e3a5f;">{_rc_price:,.2f}</span>
+                    <span class="price-change {_rc_cls}">{_rc_sign}{_rc_pct:.2f}%</span>
                     {_verdict_badge(r['Phân loại'])}
                     <span style="color:#6b87a8;font-size:0.8em;">Cơ hội <strong>{int(r['Điểm cơ hội'])}/100</strong> · Độ tin cậy <strong>{int(r['Độ tin cậy'])}%</strong></span>
                     {_sig_badge(r['Tín hiệu'])}
@@ -865,6 +962,12 @@ elif tab == "5. Của tôi":
             table.append({"Mã": row["Mã"], "Giá": a["current_price"], "Tín hiệu": a["signal"],
                           "Dự đoán": pred, "Điểm": a["score_100"], "Cảnh báo": alert_sum})
         tdf = pd.DataFrame(table)
+        # Overlay giá REAL-TIME vào bảng tóm tắt
+        _pf_board = get_realtime_board(_RT_SYMBOLS)
+        for _ti in tdf.index:
+            _ts = _pf_board.get(str(tdf.at[_ti, "Mã"]).upper())
+            if _ts and _ts.get("price"):
+                tdf.at[_ti, "Giá"] = _ts["price"]
         tdisp = tdf.copy()
         tdisp["Giá"] = tdisp["Giá"].map(lambda v: "-" if pd.isna(v) else f"{v:,.2f}")
         tdisp["Điểm"] = tdisp["Điểm"].astype(int)
@@ -902,11 +1005,25 @@ elif tab == "5. Của tôi":
 
             h1, h2 = st.columns([7, 1])
             with h1:
+                # ---- Giá REAL-TIME từ bảng giá (nếu có) ----
+                _ps = _pf_board.get(str(sym).upper())
+                if _ps and _ps.get("price"):
+                    _ph_price = _ps["price"]
+                    _ph_pct = _ps.get("pct")
+                    _ph_ref = _ps.get("ref") or a["current_price"]
+                    if _ph_pct is None and _ph_ref:
+                        _ph_pct = (_ph_price - _ph_ref) / _ph_ref * 100 if _ph_ref else 0.0
+                    _ph_pct = _ph_pct if _ph_pct is not None else a["pct_1d"]
+                else:
+                    _ph_price = a["current_price"]
+                    _ph_pct = a["pct_1d"]
+                _ph_cls = "price-up" if _ph_pct >= 0 else "price-down"
+                _ph_sign = "+" if _ph_pct >= 0 else ""
                 st.markdown(f"""
                 <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin:8px 0 2px 0;">
                     <span style="font-weight:700;color:#2563eb;font-size:1.05em;">{sym}</span>
-                    <span style="color:#1e3a5f;font-weight:700;font-size:1.05em;">{a['current_price']:,.2f}</span>
-                    <span class="price-change {'price-up' if a['pct_1d']>=0 else 'price-down'}">{'+' if a['pct_1d']>=0 else ''}{a['pct_1d']:.2f}%</span>
+                    <span style="color:#1e3a5f;font-weight:700;font-size:1.05em;">{_ph_price:,.2f}</span>
+                    <span class="price-change {_ph_cls}">{_ph_sign}{_ph_pct:.2f}%</span>
                     <span class="signal-badge {sig_badge}" style="padding:3px 8px;font-size:0.78em;border:0;width:auto;">{a['signal']}</span>
                     <span style="color:#b45309;font-size:0.78em;">Điểm {a['score_100']}</span>
                     {f'<span style="color:#6b87a8;font-size:0.78em;">{sub}</span>' if sub else ''}

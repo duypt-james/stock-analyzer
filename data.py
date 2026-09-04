@@ -3,6 +3,7 @@ import numpy as np
 import os
 from datetime import datetime, timedelta
 from vnstock.api.quote import Quote
+from vnstock.explorer.kbs.trading import Trading as _KBS_Trading
 import streamlit as st
 import time
 
@@ -78,6 +79,51 @@ def force_refresh():
         st.cache_data.clear()
     except Exception:
         pass
+
+
+@st.cache_data(ttl=4, show_spinner=False)
+def get_realtime_board(symbols: tuple) -> dict:
+    """Bảng giá REAL-TIME cho cả rổ mã (1 request duy nhất qua KBS price_board).
+
+    Trả về dict {SYMBOL: {price, change, pct, open, high, low, vol, time, ref, bid1, ask1}}.
+    Giá là giá khớp lệnh hiện tại (close_price) từ bảng giá realtime, cập nhật mỗi ~4-5s.
+    Trong/ngoài giờ giao dịch đều trả về phiên gần nhất.
+    """
+    try:
+        _throttle(0.8)
+        board_df = _KBS_Trading().price_board(list(symbols), get_all=False)
+        if board_df is None or board_df.empty:
+            return {}
+        out = {}
+        for _, r in board_df.iterrows():
+            sym = str(r.get("symbol", "")).upper()
+            if not sym:
+                continue
+
+            def num(key):
+                v = r.get(key)
+                try:
+                    return float(v) if v is not None and not pd.isna(v) else None
+                except (TypeError, ValueError):
+                    return None
+
+            out[sym] = {
+                "price": num("close_price"),
+                "ref": num("reference_price"),
+                "change": num("price_change"),
+                "pct": num("percent_change"),
+                "open": num("open_price"),
+                "high": num("high_price"),
+                "low": num("low_price"),
+                "vol": num("volume_accumulated"),
+                "bid1": num("bid_price_1"),
+                "ask1": num("ask_price_1"),
+                "time": r.get("time", None),
+                "update": time.time(),
+            }
+        return out
+    except Exception:
+        return {}
 
 
 VNINDEX_STOCKS = {
