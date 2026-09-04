@@ -397,7 +397,7 @@ def _predict_text(a) -> str:
     sig = a["signal"]
     if "MUA" in sig:
         target = a["take_profit"] or a["current_price"] * 1.05
-        return f"Xu hướng tích cực: khả năng tăng hướng tới vùng {target:,.0f} trong ngắn hạn. Cân nhắc vào vị thế theo Điểm mua."
+        return f"Xu hướng tích cực: khả năng tăng hướng tới vùng {target:,.2f} trong ngắn hạn. Cân nhắc vào vị thế theo Điểm mua."
     if "BÁN" in sig:
         return f"Xu hướng tiêu cực: khả năng điều chỉnh/giảm còn tiếp diễn. Ưu tiên chốt lời hoặc đứng ngoài."
     return "Đi ngang/tích lũy: chưa có tín hiệu rõ ràng, nên chờ giá bứt phá hoặc xác nhận hướng."
@@ -481,7 +481,7 @@ if tab == "1. Thị trường":
                         f'<div style="display:flex;flex-direction:column;align-items:center;padding:6px 4px;'
                         f'background:#f7fbff;border:1px solid #dbe7f6;border-radius:6px;min-width:92px;">'
                         f'<span style="font-weight:700;color:#2563eb;font-size:0.85em;">{_sym}</span>'
-                        f'<span style="font-weight:700;color:#1e3a5f;">{_rv["price"]:,.0f}</span>'
+                        f'<span style="font-weight:700;color:#1e3a5f;">{_rv["price"]:,.2f}</span>'
                         f'<span class="price-change {_c}" style="font-size:0.8em;">{"+" if _rv_p>=0 else ""}{_rv_p:.2f}%</span></div>'
                     )
                 if _rw_cells:
@@ -733,8 +733,8 @@ elif tab == "3. Chi tiết":
         # Dòng - Sóng - Điểm
         st.markdown('<div class="section-box" style="margin-top:12px;">', unsafe_allow_html=True)
         st.markdown('<div class="section-title">Phân tích Dòng - Sóng - Điểm</div>', unsafe_allow_html=True)
-        sup_text = ", ".join(f"{s:,.0f}" for s in (entry_info.get("support") or [])[-3:]) or "-"
-        res_text = ", ".join(f"{r:,.0f}" for r in (entry_info.get("resistance") or [])[-3:]) or "-"
+        sup_text = ", ".join(f"{s:,.2f}" for s in (entry_info.get("support") or [])[-3:]) or "-"
+        res_text = ", ".join(f"{r:,.2f}" for r in (entry_info.get("resistance") or [])[-3:]) or "-"
         st.markdown(f"""
         <div style="font-size:0.85em; line-height:1.6; color:#1e3a5f;">
             <strong style="color:#2563eb;">• DÒNG (Dòng tiền):</strong> MFI = {_num(latest['MFI'])}, CMF = {_num(latest['CMF'])} → dòng tiền {("vào" if latest['CMF'] > 0 else "ra")} chủ đạo của mã {symbol}.<br>
@@ -813,7 +813,7 @@ elif tab == "4. Cơ hội":
             st.markdown('<div class="section-box" style="margin-top:0;">', unsafe_allow_html=True)
             st.markdown(f'<div class="section-title">✅ MÃ ĐƯỢC CHỌN LỌC — CƠ HỘI TĂNG ({len(cand)} mã) · có điểm mua / cắt lỗ / chốt lời</div>', unsafe_allow_html=True)
             for _, r in cand.iterrows():
-                _px = lambda v: "-" if v is None or pd.isna(v) else f"{v:,.0f}"
+                _px = lambda v: "-" if v is None or pd.isna(v) else f"{v:,.2f}"
                 # ---- Giá REAL-TIME từ bảng giá (nếu có) ----
                 _rts = _rt(str(r["Mã"]).upper())
                 if _rts and _rts.get("price"):

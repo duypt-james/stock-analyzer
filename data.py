@@ -107,17 +107,23 @@ def get_realtime_board(symbols: tuple) -> dict:
                 except (TypeError, ValueError):
                     return None
 
+            # Lưu ý: price_board trả giá theo VND/share (VD: VCB = 58800).
+            # Toàn bộ dữ liệu lịch sử/indicator trong app đang theo ĐV "nghìn đồng"
+            # (VD: VCB close = 58.8). Chia 1000 để fall-time đồng bộ cùng đơn vị —
+            # tránh hiện giá "58,800.00" cạnh nến "58.80".
+            prc = num("close_price")
+            ref = num("reference_price")
             out[sym] = {
-                "price": num("close_price"),
-                "ref": num("reference_price"),
-                "change": num("price_change"),
+                "price": prc / 1000.0 if prc is not None else None,
+                "ref": ref / 1000.0 if ref is not None else None,
+                "change": num("price_change") / 1000.0 if num("price_change") is not None else None,
                 "pct": num("percent_change"),
-                "open": num("open_price"),
-                "high": num("high_price"),
-                "low": num("low_price"),
+                "open": num("open_price") / 1000.0 if num("open_price") is not None else None,
+                "high": num("high_price") / 1000.0 if num("high_price") is not None else None,
+                "low": num("low_price") / 1000.0 if num("low_price") is not None else None,
                 "vol": num("volume_accumulated"),
-                "bid1": num("bid_price_1"),
-                "ask1": num("ask_price_1"),
+                "bid1": num("bid_price_1") / 1000.0 if num("bid_price_1") is not None else None,
+                "ask1": num("ask_price_1") / 1000.0 if num("ask_price_1") is not None else None,
                 "time": r.get("time", None),
                 "update": time.time(),
             }
