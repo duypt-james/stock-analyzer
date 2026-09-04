@@ -97,6 +97,30 @@ def _pf_analyze_symbol(symbol: str, sl, tp):
         return None, None, False
 
 
+@st.cache_data(ttl=3600, show_spinner=False)
+def _wave_trend(df: pd.DataFrame) -> dict:
+    """Đánh giá xu hướng sóng Elliott — cache theo nội dung df (chỉ báo đã tính)."""
+    return analyze_wave_trend(df)
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _market_status(df: pd.DataFrame) -> dict:
+    """Phân loại trạng thái thị trường từ df chỉ số — cache theo df."""
+    return get_market_status(df)
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _entry_points_full(df: pd.DataFrame) -> dict:
+    """Điểm vào/ra + lý do — cache theo df. market_status tái dựng nội bộ từ
+    VNINDEX đã cache 6h (ổn định), nên không cần đưa dict vào cache key."""
+    try:
+        mkt = get_vnindex("1y")
+        ms = get_market_status(mkt) if not mkt.empty else None
+        return suggest_entry_points(df, market_status=ms)
+    except Exception:
+        return {}
+
+
 
 # CSS Styling - Giao diện xanh lam nhẹ, nội dung sát mép trái
 st.markdown("""
@@ -407,7 +431,7 @@ if tab == "1. Thị trường":
     if market_df.empty:
         st.error("Không thể tải dữ liệu chỉ số VNINDEX. Vui lòng thử lại.")
     else:
-        market_df = add_all_indicators(detect_waves(market_df.copy()))
+        market_df = _cached_pair(market_df)
 
         latest_idx = market_df.iloc[-1]
         prev_idx = market_df.iloc[-2]
@@ -416,8 +440,8 @@ if tab == "1. Thị trường":
         chg_color = "price-up" if chg_idx > 0 else "price-down" if chg_idx < 0 else "price-flat"
         chg_sign = "+" if chg_idx >= 0 else ""
 
-        market_info = get_market_status(market_df)
-        wave_market = analyze_wave_trend(market_df)
+        market_info = _market_status(market_df)
+        wave_market = _wave_trend(market_df)
 
         trend_map = {
             "TĂNG MẠNH": ("XU HƯỚNG TĂNG TRƯỞNG MẠNH", "#16a34a"),
@@ -625,10 +649,8 @@ elif tab == "3. Chi tiết":
         chg_color = "price-up" if chg > 0 else "price-down" if chg < 0 else "price-flat"
         chg_sign = "+" if chg >= 0 else ""
 
-        mkt_df = get_vnindex(period="1y")
-        market_status = get_market_status(mkt_df) if not mkt_df.empty else None
-        entry_info = suggest_entry_points(df, market_status=market_status)
-        wave_info = analyze_wave_trend(df)
+        entry_info = _entry_points_full(df)
+        wave_info = _wave_trend(df)
 
         # ---- Giá REAL-TIME (từ bảng giá) thay cho giá đóng cửa lịch sử khi có ----
         rt = _rt(symbol)
