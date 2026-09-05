@@ -28,6 +28,11 @@ def get_app_password() -> str:
     return _get_secret("APP_PASSWORD").strip()
 
 
+def get_github_token() -> str:
+    """Personal Access Token GitHub (đọc/ghi Gist) - GITHUB_TOKEN."""
+    return _get_secret("GITHUB_TOKEN").strip()
+
+
 def is_protected() -> bool:
     """App có được bảo vệ bằng mật khẩu hay không."""
     return bool(get_app_password())

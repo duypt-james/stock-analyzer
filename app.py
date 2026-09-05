@@ -948,6 +948,11 @@ elif tab == "5. Của tôi":
 
     watch = portfolio.get_watchlist()
 
+    if portfolio.is_persistent_remote():
+        st.caption("💾 Được lưu bền vững qua GitHub Gist (không mất khi mở lại app).")
+    else:
+        st.caption("⚠️ Chưa cấu hình GitHub token — danh mục chỉ lưu tạm trên máy chủ, sẽ mất khi app khởi động lại. Thêm biến GITHUB_TOKEN để lưu vĩnh viễn.", unsafe_allow_html=True)
+
     # ---- Thêm mã mới ----
     st.markdown('<div class="section-box" style="margin-top:0;">', unsafe_allow_html=True)
     st.markdown('<div class="section-title">➕ Thêm mã theo dõi</div>', unsafe_allow_html=True)
